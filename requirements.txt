@@ -1,0 +1,14 @@
+# ojeada dependencies.
+# Install with: pip install -r requirements.txt
+
+# pandas 3.0: the current stable series. Brings the "str" dtype by default
+# and Copy-on-Write.
+pandas>=3.0.5,<3.1
+
+# matplotlib: draws the charts that --plot saves.
+matplotlib>=3.11.1,<4
+
+# pyarrow: the recommended backend for the new "str" dtype in pandas 3.0.
+# Not mandatory: without it pandas falls back to an internal backend and
+# everything still works.
+pyarrow>=13.0.0

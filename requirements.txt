@@ -12,3 +12,6 @@ matplotlib>=3.11.1,<4
 # Not mandatory: without it pandas falls back to an internal backend and
 # everything still works.
 pyarrow>=13.0.0
+
+# openpyxl: the engine pandas uses to read .xlsx files.
+openpyxl>=3.1.0

@@ -11,15 +11,14 @@
 
 ---
 
-The whole point of this project is that the code stays **easy to read**. Every function
-does one thing and its name says exactly what that thing is. No tricks, no clever
-one-liners.
+Small script, plain functions, nothing clever. Meant to be read top to bottom.
 
 ## Requirements
 
 - Python 3.11 or newer (tested on Python 3.14)
 - pandas 3.0
 - matplotlib 3.11
+- openpyxl 3.1 (only needed to read `.xlsx` files)
 
 ## Installation
 
@@ -64,10 +63,23 @@ python main.py --file data/sample_sales.csv --plot
 
 | Argument | Required | What it does |
 |----------|----------|--------------|
-| `--file` | Yes      | Path to the CSV file you want to explore |
+| `--file` | Yes      | Path to the CSV, Excel or JSON file you want to explore |
 | `--sort` | No       | One or more columns to sort by |
 | `--desc` | No       | Sort from highest to lowest (default: lowest to highest) |
 | `--plot` | No       | Generate charts and save them into `output/` |
+| `--stats` | No      | Show mean, median, standard deviation and correlations for numeric columns |
+
+### Other input formats
+
+Besides CSV, `--file` also accepts Excel and JSON files:
+
+```bash
+python main.py --file data/sample_sales.xlsx
+python main.py --file data/sample_sales.json
+```
+
+Sample files for both formats are included in `data/`, generated from the same
+data as `sample_sales.csv`.
 
 ## Example output
 
@@ -175,6 +187,33 @@ Error: the column 'price' does not exist in the dataset.
 Available columns: date, product, category, units_sold, unit_price
 ```
 
+## Basic statistics
+
+`--stats` shows mean, median and standard deviation for every numeric column, plus a
+correlation table when there is more than one:
+
+```bash
+python main.py --file data/sample_sales.csv --stats
+```
+
+```
+======================================================
+BASIC STATISTICS
+======================================================
+
+SUMMARY (numeric columns)
+                  mean  median     std_dev
+units_sold   10.450000     8.5    8.094670
+unit_price  242.276471    62.0  346.478932
+
+CORRELATIONS
+            units_sold  unit_price
+units_sold    1.000000   -0.592032
+unit_price   -0.592032    1.000000
+```
+
+Correlation goes from -1 to 1. Close to 0 means the two columns are unrelated.
+
 ## Generating charts
 
 ```bash
@@ -212,23 +251,30 @@ how many rows fall into each range. Most sales turn out to be of just a few unit
 **`line_units_sold_by_date.png`** — a line with the total units per date, one dot for
 every day that has data.
 
-### Chart design decisions
+### Notes on the charts
 
-Every bar in a chart uses the **same color**. Painting each bar differently is tempting,
-but it adds nothing: the length of the bar already tells you which one is bigger. Coloring
-them differently repeats that information and burns color, the one free channel left to
-show something new.
-
-The grid is a thin, light line — never black, never dashed. It is there to help read
-values, not to compete with the data.
-
-On axes that count rows, the ticks are whole numbers. There is no such thing as half a row.
+- Same color for every bar — the length already tells you which one is bigger.
+- Light grid, no dashes, doesn't fight with the data.
+- Row-count axes only show whole numbers.
 
 ### How dates are detected
 
-A column counts as a date if it already has a date type, or if it is **text** and pandas
-manages to convert it. Restricting this to text is deliberate: any number can be read as a
-date (seconds since 1970), so a column like `units_sold` would be misdetected as one.
+A column counts as a date if it's already a date type, or if it's text that pandas
+can parse as one. Only text is checked — otherwise a plain number like `units_sold`
+would get misread as a timestamp.
+
+## Graphical interface
+
+`gui.py` opens a window with the same features, for anyone who'd rather not use the
+terminal:
+
+```bash
+python gui.py
+```
+
+The sidebar picks up whatever CSV/Excel/JSON files are sitting in `data/`, or use
+"Browse for a file..." for anything else. Info, Sort, Statistics and Charts are just
+tabs — same functions as `main.py` underneath, different front end.
 
 ## Error handling
 
@@ -247,24 +293,18 @@ Cases covered: missing file, no read permission, empty file, and malformed CSV.
 
 ```
 .
-├── main.py             # The whole script
+├── main.py             # The terminal script
+├── gui.py              # The graphical interface (reuses main.py)
 ├── requirements.txt    # Dependencies
 ├── README.md
 ├── LICENSE
 ├── assets/             # Project logo
-├── data/               # Sample CSV to try it out
-│   └── sample_sales.csv
+├── data/               # Sample files to try it out
+│   ├── sample_sales.csv
+│   ├── sample_sales.xlsx
+│   └── sample_sales.json
 └── output/             # Generated charts land here
 ```
-
-## Roadmap
-
-- [x] Read a CSV and show basic information
-- [x] Sort by one or more columns (`--sort`, ascending and descending)
-- [x] Generate charts based on column type (`--plot`) and save them into `output/`
-- [ ] Support more input formats (Excel, JSON)
-- [ ] Basic statistical analysis (mean, median, correlations)
-- [ ] Graphical interface
 
 ## License
 

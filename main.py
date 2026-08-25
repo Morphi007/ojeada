@@ -15,16 +15,13 @@ from pathlib import Path
 
 import matplotlib
 
-# Agg draws straight to a file, without opening any window.
-# It has to be set before importing pyplot.
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # no display needed, must be set before importing pyplot
 
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.ticker import MaxNLocator
 
-# One color for every chart: each chart shows a single series, so painting
-# each bar differently would not add any information.
+# Same color everywhere, one series per chart.
 CHART_COLOR = "#2a78d6"
 SURFACE_COLOR = "#fcfcfb"
 GRID_COLOR = "#e1e0d9"
@@ -35,10 +32,25 @@ MUTED_COLOR = "#898781"
 MAX_CATEGORIES_IN_CHART = 10
 
 
+SUPPORTED_FILE_TYPES = (".csv", ".xlsx", ".xls", ".json")
+
+
 def read_dataset(file_path):
-    """Read a CSV file and return it as a DataFrame."""
+    """Read a CSV, Excel or JSON file and return it as a DataFrame."""
+    extension = Path(file_path).suffix.lower()
+
+    if extension not in SUPPORTED_FILE_TYPES:
+        print(f"Error: unsupported file type '{extension}'.")
+        print(f"Supported formats: {', '.join(SUPPORTED_FILE_TYPES)}")
+        sys.exit(1)
+
     try:
-        dataset = pd.read_csv(file_path)
+        if extension == ".csv":
+            dataset = pd.read_csv(file_path)
+        elif extension in (".xlsx", ".xls"):
+            dataset = pd.read_excel(file_path)
+        else:
+            dataset = pd.read_json(file_path)
 
     except FileNotFoundError:
         print(f"Error: could not find the file '{file_path}'.")
@@ -56,6 +68,10 @@ def read_dataset(file_path):
     except pd.errors.ParserError:
         print(f"Error: the file '{file_path}' is not a valid CSV.")
         print("Some commas may be missing, quotes unbalanced, or rows may not line up.")
+        sys.exit(1)
+
+    except ValueError:
+        print(f"Error: the file '{file_path}' is not a valid {extension} file.")
         sys.exit(1)
 
     return dataset
@@ -109,6 +125,35 @@ def show_missing_summary(dataset):
     print()
 
 
+def show_statistics(dataset):
+    """Show mean, median, standard deviation and correlations for numeric columns."""
+    numeric_columns = dataset.select_dtypes(include="number")
+
+    print("=" * 54)
+    print("BASIC STATISTICS")
+    print("=" * 54)
+    print()
+
+    if numeric_columns.empty:
+        print("  The dataset has no numeric columns to analyze.")
+        print()
+        return
+
+    print("SUMMARY (numeric columns)")
+    summary = pd.DataFrame({
+        "mean": numeric_columns.mean(),
+        "median": numeric_columns.median(),
+        "std_dev": numeric_columns.std(),
+    })
+    print(summary)
+    print()
+
+    if len(numeric_columns.columns) > 1:
+        print("CORRELATIONS")
+        print(numeric_columns.corr())
+        print()
+
+
 def show_first_rows(dataset, how_many=5):
     """Show the first rows of the dataset."""
     print(f"FIRST {how_many} ROWS")
@@ -143,8 +188,7 @@ def sort_dataset(dataset, column_names, descending):
     """Return a copy of the dataset sorted by the given columns."""
     check_columns_exist(dataset, column_names)
 
-    # sort_values returns a brand new DataFrame. We do not use inplace: in
-    # pandas 3.0 that parameter returns the object and confuses more than it helps.
+    # no inplace=, keep the original dataset untouched
     return dataset.sort_values(by=column_names, ascending=not descending)
 
 
@@ -174,12 +218,7 @@ def is_text_column(dataset, column_name):
 
 
 def is_date_column(dataset, column_name):
-    """
-    Tell whether the column holds dates.
-
-    We only try to convert text columns: any number can be read as a date
-    (seconds since 1970), and we do not want that false positive.
-    """
+    """Tell whether the column holds dates. Only text is tried, numbers convert too easily."""
     if pd.api.types.is_datetime64_any_dtype(dataset[column_name]):
         return True
 
@@ -212,18 +251,12 @@ def build_file_name(prefix, column_name):
 
 
 def apply_chart_style(axes, title, x_label, y_label, grid_axis="both"):
-    """
-    Apply the same visual style to every chart.
-
-    grid_axis says which axis gets the grid: "x", "y" or "both". It is set
-    here and nowhere else, because two calls to axes.grid() on the same
-    chart override each other.
-    """
+    """Apply the same visual style to every chart."""
     axes.set_title(title, color=TEXT_COLOR, fontsize=13, pad=15)
     axes.set_xlabel(x_label, color=MUTED_COLOR, fontsize=10)
     axes.set_ylabel(y_label, color=MUTED_COLOR, fontsize=10)
 
-    # The grid helps read values, but it must not compete with the data.
+    # grid_axis is only set here — a second axes.grid() call would override it
     axes.grid(axis=grid_axis, color=GRID_COLOR, linewidth=0.8)
     axes.set_axisbelow(True)
 
@@ -239,15 +272,15 @@ def save_chart(figure, output_folder, file_name):
     """Save the chart as a PNG file and release the memory it was using."""
     file_path = output_folder / file_name
 
-    # bbox_inches trims the leftover margin and keeps long labels from being cut.
+    # bbox_inches="tight" so long labels don't get cut off
     figure.savefig(file_path, dpi=150, bbox_inches="tight", facecolor=SURFACE_COLOR)
     plt.close(figure)
 
     print(f"  Saved: {file_path}")
 
 
-def plot_histogram(dataset, column_name, output_folder):
-    """Draw a histogram: how many values fall into each range."""
+def build_histogram_figure(dataset, column_name):
+    """Build a histogram figure: how many values fall into each range."""
     values = dataset[column_name].dropna()
 
     figure, axes = plt.subplots(figsize=(8, 5), facecolor=SURFACE_COLOR)
@@ -256,8 +289,7 @@ def plot_histogram(dataset, column_name, output_folder):
     # rwidth leaves a gap between bars so they read apart without a border.
     axes.hist(values, bins=10, color=CHART_COLOR, rwidth=0.95)
 
-    # Counting rows always gives a whole number: no "2.5 rows" ticks.
-    axes.yaxis.set_major_locator(MaxNLocator(integer=True))
+    axes.yaxis.set_major_locator(MaxNLocator(integer=True))  # whole numbers only
 
     apply_chart_style(
         axes,
@@ -267,24 +299,27 @@ def plot_histogram(dataset, column_name, output_folder):
         grid_axis="y",
     )
 
+    return figure
+
+
+def plot_histogram(dataset, column_name, output_folder):
+    """Draw a histogram and save it as a PNG file."""
+    figure = build_histogram_figure(dataset, column_name)
     save_chart(figure, output_folder, build_file_name("histogram", column_name))
 
 
-def plot_bars(dataset, column_name, output_folder):
-    """Draw a bar chart: how many times each category shows up."""
+def build_bars_figure(dataset, column_name):
+    """Build a bar chart figure: how many times each category shows up."""
     counts = dataset[column_name].value_counts().head(MAX_CATEGORIES_IN_CHART)
 
-    # Horizontal bars: category names read without rotating the text.
-    # The order is flipped so the most frequent category ends up on top.
-    counts = counts.sort_values()
+    counts = counts.sort_values()  # so the most frequent one ends up on top
 
     figure, axes = plt.subplots(figsize=(8, 5), facecolor=SURFACE_COLOR)
     axes.set_facecolor(SURFACE_COLOR)
 
     axes.barh(counts.index, counts.to_numpy(), color=CHART_COLOR, height=0.7)
 
-    # Counting rows always gives a whole number: no "2.5 rows" ticks.
-    axes.xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes.xaxis.set_major_locator(MaxNLocator(integer=True))  # whole numbers only
 
     apply_chart_style(
         axes,
@@ -294,11 +329,17 @@ def plot_bars(dataset, column_name, output_folder):
         grid_axis="x",
     )
 
+    return figure
+
+
+def plot_bars(dataset, column_name, output_folder):
+    """Draw a bar chart and save it as a PNG file."""
+    figure = build_bars_figure(dataset, column_name)
     save_chart(figure, output_folder, build_file_name("bars", column_name))
 
 
-def plot_time_series(dataset, date_column, value_column, output_folder):
-    """Draw a line with the total of a numeric column over time."""
+def build_time_series_figure(dataset, date_column, value_column):
+    """Build a line figure with the total of a numeric column over time."""
     dates = pd.to_datetime(dataset[date_column])
 
     # Group by date so every date shows up only once along the line.
@@ -326,8 +367,54 @@ def plot_time_series(dataset, date_column, value_column, output_folder):
 
     figure.autofmt_xdate()
 
+    return figure
+
+
+def plot_time_series(dataset, date_column, value_column, output_folder):
+    """Draw a line chart and save it as a PNG file."""
+    figure = build_time_series_figure(dataset, date_column, value_column)
     file_name = build_file_name("line", f"{value_column}_by_{date_column}")
     save_chart(figure, output_folder, file_name)
+
+
+def list_available_charts(dataset):
+    """List (kind, column_name) pairs; kind is "histogram", "bars" or "time_series"."""
+    date_column = find_date_column(dataset)
+    charts = []
+
+    for column_name in dataset.columns:
+        if column_name == date_column:
+            continue
+
+        if is_number_column(dataset, column_name):
+            charts.append(("histogram", column_name))
+        elif is_text_column(dataset, column_name):
+            charts.append(("bars", column_name))
+
+    if date_column is not None:
+        for column_name in dataset.columns:
+            if is_number_column(dataset, column_name):
+                charts.append(("time_series", column_name))
+
+    return charts
+
+
+def chart_label(kind, column_name):
+    """Build a human-readable label for a chart, for menus and lists."""
+    if kind == "histogram":
+        return f"Distribution of {column_name}"
+    if kind == "bars":
+        return f"Frequency of {column_name}"
+    return f"{column_name} over time"
+
+
+def build_chart_figure(dataset, kind, column_name):
+    """Build the figure for one chart (identified by list_available_charts)."""
+    if kind == "histogram":
+        return build_histogram_figure(dataset, column_name)
+    if kind == "bars":
+        return build_bars_figure(dataset, column_name)
+    return build_time_series_figure(dataset, find_date_column(dataset), column_name)
 
 
 def create_output_folder(folder_name="output"):
@@ -394,6 +481,12 @@ def create_argument_parser():
         help="Generate charts and save them into the output/ folder.",
     )
 
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show mean, median, standard deviation and correlations for numeric columns.",
+    )
+
     return parser
 
 
@@ -408,6 +501,9 @@ def main():
     if arguments.sort:
         dataset = sort_dataset(dataset, arguments.sort, arguments.desc)
         show_sorted_result(dataset, arguments.sort, arguments.desc)
+
+    if arguments.stats:
+        show_statistics(dataset)
 
     if arguments.plot:
         generate_all_plots(dataset)
